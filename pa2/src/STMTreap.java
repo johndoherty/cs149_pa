@@ -1,3 +1,6 @@
+import java.util.concurrent.atomic.AtomicLong;
+
+
 public class STMTreap implements IntSet {
     static class Node {
         final int key;
@@ -18,11 +21,12 @@ public class STMTreap implements IntSet {
         }
     }
 
-    private long randState = 0;
+    private AtomicLong randState = new AtomicLong(0L);
     private Node root;
 
     @Override
-	public synchronized boolean contains(final int key) {
+    @org.deuce.Atomic
+	public boolean contains(final int key) {
         Node node = root;
         while (node != null) {
             if (key == node.key) {
@@ -34,8 +38,13 @@ public class STMTreap implements IntSet {
     }
 
     @Override
-	public synchronized void add(final int key) {
-        root = addImpl(root, key);
+    @org.deuce.Atomic
+	public void add(final int key) {
+        //root = addImpl(key, randPriority());
+        Node newRoot = addImpl(root, key);
+        if (newRoot != root) {
+            root = newRoot;
+        }
     }
 
     private Node addImpl(final Node node, final int key) {
@@ -47,14 +56,21 @@ public class STMTreap implements IntSet {
             return node;
         }
         else if (key < node.key) {
-            node.left = addImpl(node.left, key);
+            Node newLeft = addImpl(node.left, key); 
+            if (newLeft != node.left) {
+                node.left = newLeft;
+            }
+
             if (node.left.priority > node.priority) {
                 return rotateRight(node);
             }
             return node;
         }
         else {
-            node.right = addImpl(node.right, key);
+            Node newRight = addImpl(node.right, key);
+            if (newRight != node.right) {
+                node.right = newRight;
+            }
             if (node.right.priority > node.priority) {
                 return rotateLeft(node);
             }
@@ -62,11 +78,53 @@ public class STMTreap implements IntSet {
         }
     }
 
+
+    /*private Node balanceTreeFromKeyToRoot(Node node, final int key) {
+        if (node == null) {
+            return null;
+        } else if (key == node.key) {
+            return node;
+        } else if (key < node.key) {
+            node.left = balanceTreeFromKeyToRoot(node.left, key);
+            if (node.left.priority > node.priority) {
+                return rotateRight(node);
+            }
+            return node;
+        } else {
+            node.right = balanceTreeFromKeyToRoot(node.right, key);
+            if (node.right.priority > node.priority) {
+                return rotateLeft(node);
+            }
+            return node;
+        }    
+    }
+
+    @org.deuce.Atomic
+    private Node addImpl(final int key, final int priority) {
+        Node newNode = new Node(key, priority);
+        if (root == null) return newNode;
+        Node parent = root;
+        Node node = root;
+        while (node != null) {
+            if (node.key == key) return root;
+            parent = node;
+            node = key < node.key ? node.left : node.right;
+        }
+        if (key < parent.key) parent.left = newNode;
+        else parent.right = newNode;
+
+        // Balance path to root
+        return balanceTreeFromKeyToRoot(root, key);
+ 
+    }*/
+
     private int randPriority() {
         // The constants in this 64-bit linear congruential random number
         // generator are from http://nuclear.llnl.gov/CNP/rng/rngman/node4.html
-        randState = randState * 2862933555777941757L + 3037000493L;
-        return (int)(randState >> 30);
+        long r = randState.get();
+        long newR = r * 2862933555777941757L + 3037000493L;
+        randState.compareAndSet(r, newR);
+        return (int)(newR >> 30);
     }
 
     private Node rotateRight(final Node node) {
@@ -89,8 +147,12 @@ public class STMTreap implements IntSet {
     }
 
     @Override
-	public synchronized void remove(final int key) {
-        root = removeImpl(root, key);
+    @org.deuce.Atomic
+	public void remove(final int key) {
+        Node newRoot = removeImpl(root, key);
+        if (newRoot != root) {
+            root = newRoot;
+        }
     }
 
     private Node removeImpl(final Node node, final int key) {
@@ -123,11 +185,17 @@ public class STMTreap implements IntSet {
             }
         }
         else if (key < node.key) {
-            node.left = removeImpl(node.left, key);
+            Node newLeft = removeImpl(node.left, key);
+            if (node.left != newLeft) {
+                node.left = newLeft;
+            }
             return node;
         }
         else {
-            node.right = removeImpl(node.right, key);
+            Node newRight = removeImpl(node.right, key);
+            if (node.right != newRight) {
+                node.right = newRight;
+            }
             return node;
         }
     }
