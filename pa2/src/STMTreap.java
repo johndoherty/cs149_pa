@@ -40,7 +40,6 @@ public class STMTreap implements IntSet {
     @Override
     @org.deuce.Atomic
 	public void add(final int key) {
-        //root = addImpl(key, randPriority());
         Node newRoot = addImpl(root, key);
         if (newRoot != root) {
             root = newRoot;
@@ -83,7 +82,11 @@ public class STMTreap implements IntSet {
         // generator are from http://nuclear.llnl.gov/CNP/rng/rngman/node4.html
         long r = randState.get();
         long newR = r * 2862933555777941757L + 3037000493L;
-        randState.compareAndSet(r, newR);
+        while (!randState.compareAndSet(r, newR)) {
+            r = randState.get();
+            newR = r * 2862933555777941757L + 3037000493L;
+        }
+        
         return (int)(newR >> 30);
     }
 
