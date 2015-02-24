@@ -26,33 +26,31 @@ public class Ngram extends Configured implements Tool {
 
         @Override
         public void write(DataOutput out) throws IOException {
-            out.writeString(title);
+            out.writeChars(title);
             out.writeInt(matchCount);
         }
 
         @Override
         public void readFields(DataInput in) throws IOException {
-            title = in.readString();
+            title = in.readChars();
             matchCount = in.readInt();
         }
     }
     
-    public static class Map extends MapReduceBase implements Mapper<Text, Text, Text, MatchWritable> {
+    public static class Map extends MapReduceBase implements Mapper<Text, Text, Text, Text> {
 
         private Text word = new Text();
         private Set<String> queryNgrams = new HashSet<String>();
-        private String inputFile;
         private int n;
 
         public void configure(JobConf job) {
-            // Get n and 
             n = job.getInt("n", 1);
-            inputFile = job.get("map.input.file");
-
             Path queryFile = new Path();
             try {
                 Path[] cacheFiles = DistributedCache.getLocalCacheFiles(job);
-                queryFile = cacheFiles[0];
+                if (cacheFiles.length > 0) {
+                    queryFile = cacheFiles[0];
+                }
             } catch (IOException ioe) {
                 System.err.println("Caught exception while getting cached files: " + StringUtils.stringifyException(ioe));
             }
@@ -73,7 +71,7 @@ public class Ngram extends Configured implements Tool {
                 for (String gram : ngram) {
                     ngramString += gram + " ";
                 }
-                ngrams.add(ngramString);
+                ngrams.add(ngramString.trim());
             }
             return ngrams;
         }
@@ -92,24 +90,36 @@ public class Ngram extends Configured implements Tool {
             }
         }
 
-        public void map(Text key, Text value, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
+        public void map(Text key, Text value, OutputCollector<Text, Text> output, Reporter reporter) throws IOException {
             int matchCount = 0;
             for (String ngram : extractNgrams(value.toString(), n) {
                 if (queryNgrams.contains(ngram)) {
                     matchCount++;
                 }
             }
-            output.collect(word, one);
+            output.collect(new Text(""), new Text(Integer.toString(matchCount) + " " + key.toString()));
         }
     }
 
-    public static class Reduce extends MapReduceBase implements Reducer<Text, IntWritable, Text, IntWritable> {
-        public void reduce(Text key, Iterator<IntWritable> values, OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException {
-            int sum = 0;
+    public static class Reduce extends MapReduceBase implements Reducer<Text, Text, Text, Text> {
+        public void reduce(Text key, Iterator<Text> values, OutputCollector<Text, Text> output, Reporter reporter) throws IOException {
+            String bestArticle = "";
+            String bestScore = 0;
             while (values.hasNext()) {
-                sum += values.next().get();
+                String[] value = values.next().get().split(" ");
+                int count = Integer.parseInt(value[0]);
+                String title = "";
+                for (int i = 1; i < value.length; i++) {
+                    title += value[i] + " ";
+                }
+                title = title.trim();
+                if (count > bestScore || 
+                (count == bestScore && title.compareTo(bestArticle) > 0)) {
+                    bestArticle = title;
+                    bestScore = count;
+                }
             }
-            output.collect(key, new IntWritable(sum));
+            output.collect(key, new Text(Integer.toString(bestScore) + " " + bestArticle));
         }
     }
 
@@ -146,6 +156,7 @@ public class Ngram extends Configured implements Tool {
             }
             String title = line.replaceAll(pattern, "$1");
             nextTitle.set(title);
+            return true;
         }
 
         public boolean next(Text key, Text value) throws IOException {
@@ -157,7 +168,7 @@ public class Ngram extends Configured implements Tool {
             }
 
             key.set(title);
-            value.set(nextValue);
+            value.set(pageText);
             title.set(nextTitle);
             return true;
         }
@@ -204,7 +215,7 @@ public class Ngram extends Configured implements Tool {
         conf.setJobName("ngram");
 
         conf.setOutputKeyClass(Text.class);
-        conf.setOutputValueClass(MatchWritable.class);
+        conf.setOutputValueClass(Text.class);
 
         conf.setMapperClass(Map.class);
         conf.setCombinerClass(Reduce.class);
