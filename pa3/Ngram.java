@@ -4,6 +4,7 @@ import java.util.*;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.filecache.DistributedCache;
 import org.apache.hadoop.conf.*;
 import org.apache.hadoop.io.*;
@@ -82,7 +83,7 @@ public class Ngram extends Configured implements Tool {
                 System.out.println("Ngrams: " + extractNgrams(value.toString(), n));
             }
 
-            output.collect(new Text("_"), new Text(Integer.toString(matchCount) + " " + key.toString()));
+            output.collect(new Text(""), new Text(Integer.toString(matchCount) + "\t" + key.toString()));
 
             if ((++numRecords % 100) == 0) {
                 reporter.setStatus("Finished processing " + numRecords + " records " + "from the input file: " + inputFile); 
@@ -95,7 +96,7 @@ public class Ngram extends Configured implements Tool {
             String bestArticle = "";
             int bestScore = 0;
             while (values.hasNext()) {
-                String[] value = values.next().toString().split(" ");
+                String[] value = values.next().toString().split("\t");
                 int count = Integer.parseInt(value[0]);
                 String title = "";
                 for (int i = 1; i < value.length; i++) {
@@ -111,7 +112,7 @@ public class Ngram extends Configured implements Tool {
                     bestScore = count;
                 }
             }
-            output.collect(key, new Text(Integer.toString(bestScore) + " " + bestArticle));
+            output.collect(key, new Text(Integer.toString(bestScore) + "\t" + bestArticle));
         }
     }
 
@@ -203,69 +204,6 @@ public class Ngram extends Configured implements Tool {
                 return false;
             }
     }
-
-
-    /*public class TabOutputFormat<K, V> extends FileOutputFormat {
-      protected static class TabRecordWriter<K, V> implements RecordWriter<K, V> {
-      private static final String utf8 = "UTF-8";
-
-      private DataOutputStream out;
-
-      public TabRecordWriter(DataOutputStream out) throws IOException {
-      this.out = out;
-      }
-
-      private void writeObject(Object o) throws IOException {
-      if (o instanceof Text) {
-      Text to = (Text) o;
-      out.write(to.getBytes(), 0, to.getLength());
-      } else {
-      out.write(o.toString().getBytes(utf8));
-      }
-      }
-
-      public synchronized void write(K key, V value) throws IOException {
-
-      boolean nullKey = key == null || key instanceof NullWritable;
-      boolean nullValue = value == null || value instanceof NullWritable;
-
-      if (nullKey && nullValue) {
-      return;
-      }
-
-      Object keyObj = key;
-
-      if (nullKey) {
-      keyObj = "value";
-      }
-
-      writeKey(keyObj, false);
-
-      if (!nullValue) {
-      writeObject(value);
-      }
-
-      writeKey(keyObj, true);
-      }
-
-      public synchronized void close(Reporter reporter) throws IOException {
-      try {
-      out.writeBytes("</results>\n");
-      } finally {
-    // even if writeBytes() fails, make sure we close the stream
-    out.close();
-    }
-    }
-    }
-
-    public RecordWriter<K, V> getRecordWriter(FileSystem ignored, JobConf job,
-    String name, Progressable progress) throws IOException {
-    Path file = FileOutputFormat.getTaskOutputPath(job, name);
-    FileSystem fs = file.getFileSystem(job);
-    FSDataOutputStream fileOut = fs.create(file, progress);
-    return new XmlRecordWriter<K, V>(fileOut);
-    }
-    }*/
 
 
     public int run(String[] args) throws Exception {
