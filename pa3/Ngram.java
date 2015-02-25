@@ -11,32 +11,6 @@ import org.apache.hadoop.util.*;
 
 public class Ngram extends Configured implements Tool {
 
-    public class MatchWritable implements Writable {
-        public String title;
-        public int matchCount;
-
-        public MatchWritable(String _title, int _matchCount) {
-            title = _title;
-            matchCount = _matchCount;
-        }
-
-        public MatchWritable() {
-            this("", 0);
-        }
-
-        @Override
-        public void write(DataOutput out) throws IOException {
-            out.writeChars(title);
-            out.writeInt(matchCount);
-        }
-
-        @Override
-        public void readFields(DataInput in) throws IOException {
-            title = in.readChars();
-            matchCount = in.readInt();
-        }
-    }
-    
     public static class Map extends MapReduceBase implements Mapper<Text, Text, Text, Text> {
 
         private Text word = new Text();
@@ -45,29 +19,26 @@ public class Ngram extends Configured implements Tool {
 
         public void configure(JobConf job) {
             n = job.getInt("n", 1);
-            Path queryFile = new Path();
             try {
                 Path[] cacheFiles = DistributedCache.getLocalCacheFiles(job);
                 if (cacheFiles.length > 0) {
-                    queryFile = cacheFiles[0];
+		    parseQueryFile(cacheFiles[0], n);
                 }
             } catch (IOException ioe) {
                 System.err.println("Caught exception while getting cached files: " + StringUtils.stringifyException(ioe));
             }
-            parseQueryFile(queryFile, n);
         }
 
         private List<String> extractNgrams(String page, int n) {
             Tokenizer tokenizer = new Tokenizer(page);
-            List<String> ngram = new LinkedList<String>();
+            LinkedList<String> ngram = new LinkedList<String>();
             List<String> ngrams = new ArrayList<String>();
-            String ngram = "";
             while (tokenizer.hasNext()) {
                 ngram.add(tokenizer.next());
                 if (ngram.size() > n) {
                     ngram.remove();
                 }
-                ngramString = "";
+                String ngramString = "";
                 for (String gram : ngram) {
                     ngramString += gram + " ";
                 }
@@ -86,13 +57,14 @@ public class Ngram extends Configured implements Tool {
                 }
                 queryNgrams = new HashSet<String>(extractNgrams(text, n));
             } catch (IOException ioe) {
-                System.err.println("Caught exception while parsing the cached file '" + patternsFile + "' : " + StringUtils.stringifyException(ioe));
+                System.err.println("Caught exception while parsing the cached file: "  + StringUtils.stringifyException(ioe));
             }
         }
 
         public void map(Text key, Text value, OutputCollector<Text, Text> output, Reporter reporter) throws IOException {
+            System.out.println("Title: " + key.toString());
             int matchCount = 0;
-            for (String ngram : extractNgrams(value.toString(), n) {
+            for (String ngram : extractNgrams(value.toString(), n)) {
                 if (queryNgrams.contains(ngram)) {
                     matchCount++;
                 }
@@ -104,9 +76,9 @@ public class Ngram extends Configured implements Tool {
     public static class Reduce extends MapReduceBase implements Reducer<Text, Text, Text, Text> {
         public void reduce(Text key, Iterator<Text> values, OutputCollector<Text, Text> output, Reporter reporter) throws IOException {
             String bestArticle = "";
-            String bestScore = 0;
+            int bestScore = 0;
             while (values.hasNext()) {
-                String[] value = values.next().get().split(" ");
+                String[] value = values.next().toString().split(" ");
                 int count = Integer.parseInt(value[0]);
                 String title = "";
                 for (int i = 1; i < value.length; i++) {
@@ -138,7 +110,7 @@ public class Ngram extends Configured implements Tool {
             textToTitle(title, tmp);
         }
 
-        private boolean textToTitle(Text nextTitle, Text value) {
+        private boolean textToTitle(Text nextTitle, Text value) throws IOException {
             String line = "";
             value.set("");
             String pattern = "<title>(.+?)</title>";
@@ -155,6 +127,7 @@ public class Ngram extends Configured implements Tool {
                 line = lineValue.toString();
             }
             String title = line.replaceAll(pattern, "$1");
+            System.err.println("Title: " + title);
             nextTitle.set(title);
             return true;
         }
@@ -194,11 +167,16 @@ public class Ngram extends Configured implements Tool {
         }
     }
 
-    public static class PageFormat extends FileInputFormat<LongWritable, Text> implements InputFormat {
-        public RecordReader<LongWritable, Text> getRecordReader(InputSplit split, JobConf conf, Reporter reporter) {
+    public static class PageFormat extends FileInputFormat<Text, Text> {
+        public RecordReader<Text, Text> getRecordReader(InputSplit split, JobConf conf, Reporter reporter) throws IOException{
             reporter.setStatus(split.toString());
-            return new PageRecordReader(job, (FileSplit)input);
+            return new PageRecordReader(conf, (FileSplit)split);
         }
+
+	/*j@Override
+	protected boolean isSplitable(FileSystem fs, Path filename) {
+	    return false;
+	}*/
     }
 
     public int run(String[] args) throws Exception {
