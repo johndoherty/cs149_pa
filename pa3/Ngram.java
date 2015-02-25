@@ -78,11 +78,6 @@ public class Ngram extends Configured implements Tool {
                 }
             }
 
-            if (key.toString().equals("Puerto Rican Spindalis")) {
-                System.out.println("Match count: " + matchCount);
-                System.out.println("Ngrams: " + extractNgrams(value.toString(), n));
-            }
-
             output.collect(new Text(""), new Text(Integer.toString(matchCount) + "\t" + key.toString()));
 
             if ((++numRecords % 100) == 0) {
@@ -103,9 +98,6 @@ public class Ngram extends Configured implements Tool {
                     title += value[i] + " ";
                 }
                 title = title.trim();
-                if (title.equals("Puerto Rican Spindalis")) {
-                    System.out.println("Output count: " + count);
-                }
                 if (count > bestScore || 
                         (count == bestScore && title.compareTo(bestArticle) > 0)) {
                     bestArticle = title;
