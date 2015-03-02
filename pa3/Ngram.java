@@ -3,6 +3,8 @@ import java.io.*;
 import java.util.*;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.filecache.DistributedCache;
 import org.apache.hadoop.conf.*;
 import org.apache.hadoop.io.*;
@@ -13,16 +15,22 @@ public class Ngram extends Configured implements Tool {
 
     public static class Map extends MapReduceBase implements Mapper<Text, Text, Text, Text> {
 
+        static enum Counters { NGRAMS }
+
         private Text word = new Text();
         private Set<String> queryNgrams = new HashSet<String>();
         private int n;
 
+        private long numRecords = 0;
+        private String inputFile;
+
         public void configure(JobConf job) {
-            n = job.getInt("n", 1);
+            n = job.getInt("ngram.n", 1);
+            inputFile = job.get("map.input.file");
             try {
                 Path[] cacheFiles = DistributedCache.getLocalCacheFiles(job);
                 if (cacheFiles.length > 0) {
-		    parseQueryFile(cacheFiles[0], n);
+                    parseQueryFile(cacheFiles[0], n);
                 }
             } catch (IOException ioe) {
                 System.err.println("Caught exception while getting cached files: " + StringUtils.stringifyException(ioe));
@@ -53,23 +61,28 @@ public class Ngram extends Configured implements Tool {
                 String text = "";
                 String line = null;
                 while ((line = fis.readLine()) != null) {
-                    text += line;
+                    text += line + " ";
                 }
                 queryNgrams = new HashSet<String>(extractNgrams(text, n));
+                System.out.println("Ngrams: " + queryNgrams);
             } catch (IOException ioe) {
                 System.err.println("Caught exception while parsing the cached file: "  + StringUtils.stringifyException(ioe));
             }
         }
 
         public void map(Text key, Text value, OutputCollector<Text, Text> output, Reporter reporter) throws IOException {
-            System.out.println("Title: " + key.toString());
             int matchCount = 0;
             for (String ngram : extractNgrams(value.toString(), n)) {
                 if (queryNgrams.contains(ngram)) {
                     matchCount++;
                 }
             }
-            output.collect(new Text(""), new Text(Integer.toString(matchCount) + " " + key.toString()));
+
+            output.collect(new Text(""), new Text(Integer.toString(matchCount) + "\t" + key.toString()));
+
+            if ((++numRecords % 100) == 0) {
+                reporter.setStatus("Finished processing " + numRecords + " records " + "from the input file: " + inputFile); 
+            }
         }
     }
 
@@ -78,7 +91,7 @@ public class Ngram extends Configured implements Tool {
             String bestArticle = "";
             int bestScore = 0;
             while (values.hasNext()) {
-                String[] value = values.next().toString().split(" ");
+                String[] value = values.next().toString().split("\t");
                 int count = Integer.parseInt(value[0]);
                 String title = "";
                 for (int i = 1; i < value.length; i++) {
@@ -86,12 +99,12 @@ public class Ngram extends Configured implements Tool {
                 }
                 title = title.trim();
                 if (count > bestScore || 
-                (count == bestScore && title.compareTo(bestArticle) > 0)) {
+                        (count == bestScore && title.compareTo(bestArticle) > 0)) {
                     bestArticle = title;
                     bestScore = count;
                 }
             }
-            output.collect(key, new Text(Integer.toString(bestScore) + " " + bestArticle));
+            output.collect(key, new Text(Integer.toString(bestScore) + "\t" + bestArticle));
         }
     }
 
@@ -104,6 +117,7 @@ public class Ngram extends Configured implements Tool {
         public PageRecordReader(JobConf job, FileSplit split) throws IOException {
             lineReader = new LineRecordReader(job, split);
 
+            title = createKey();
             lineKey = lineReader.createKey();
             lineValue = lineReader.createValue();
             Text tmp = new Text();
@@ -113,21 +127,22 @@ public class Ngram extends Configured implements Tool {
         private boolean textToTitle(Text nextTitle, Text value) throws IOException {
             String line = "";
             value.set("");
-            String pattern = "<title>(.+?)</title>";
+            String pattern = ".*<title>(.+?)</title>.*";
             if (!lineReader.next(lineKey, lineValue)) {
                 return false;
             }
             line = lineValue.toString();
+            byte[] space = " ".getBytes("UTF-8");
 
             while (!line.matches(pattern)) {
                 value.append(lineValue.getBytes(), 0, lineValue.getLength());
+                value.append(space, 0, space.length);
                 if (!lineReader.next(lineKey, lineValue)) {
                     return false;
                 }
                 line = lineValue.toString();
             }
             String title = line.replaceAll(pattern, "$1");
-            System.err.println("Title: " + title);
             nextTitle.set(title);
             return true;
         }
@@ -135,6 +150,9 @@ public class Ngram extends Configured implements Tool {
         public boolean next(Text key, Text value) throws IOException {
             Text nextTitle = new Text();
             Text pageText = new Text();
+            if (!lineReader.next(lineKey, lineValue)) {
+                return false;
+            }
             boolean hasNext = textToTitle(nextTitle, pageText);
             if (!hasNext) {
                 return false;
@@ -173,11 +191,12 @@ public class Ngram extends Configured implements Tool {
             return new PageRecordReader(conf, (FileSplit)split);
         }
 
-	/*j@Override
-	protected boolean isSplitable(FileSystem fs, Path filename) {
-	    return false;
-	}*/
+        @Override
+            protected boolean isSplitable(FileSystem fs, Path filename) {
+                return false;
+            }
     }
+
 
     public int run(String[] args) throws Exception {
         if (args.length != 4) {
@@ -191,6 +210,7 @@ public class Ngram extends Configured implements Tool {
 
         JobConf conf = new JobConf(getConf(), Ngram.class);
         conf.setJobName("ngram");
+        conf.setInt("ngram.n", n);
 
         conf.setOutputKeyClass(Text.class);
         conf.setOutputValueClass(Text.class);
