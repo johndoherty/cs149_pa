@@ -10,6 +10,7 @@ make clean
 make DEBUG=0
 
 # Run the program
-./ImageCleaner images/noisy_01.nsy
-./ImageCleaner images/noisy_02.nsy
-./ImageCleaner images/noisy_03.nsy
+#./ImageCleaner images/noisy_01.nsy 1
+./ImageCleaner images/noisy_02.nsy 1
+#./ImageCleaner images/noisy_02.nsy
+#./ImageCleaner images/noisy_03.nsy
