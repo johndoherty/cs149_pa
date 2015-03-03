@@ -234,29 +234,29 @@ float imageCleaner(float *real_image, float *imag_image, int size_x, int size_y)
 
     // Perform fft with respect to the x direction
     cpu_fftx(real_image, imag_image, size_x, size_y);
-    gettimeofday(&tv2,&tz2);
+    //gettimeofday(&tv2,&tz2);
 
     // Perform fft with respect to the y direction
     cpu_ffty(real_image, imag_image, size_x, size_y);
-    gettimeofday(&tv3,&tz3);
+    //gettimeofday(&tv3,&tz3);
 
     // Filter the transformed image
     cpu_filter(real_image, imag_image, size_x, size_y);
-    gettimeofday(&tv4,&tz4);
+    //gettimeofday(&tv4,&tz4);
 
     // Perform an inverse fft with respect to the x direction
     cpu_ifftx(real_image, imag_image, size_x, size_y);
-    gettimeofday(&tv5,&tz5);
+    //gettimeofday(&tv5,&tz5);
 
     // Perform an inverse fft with respect to the y direction
     cpu_iffty(real_image, imag_image, size_x, size_y);
-    gettimeofday(&tv6,&tz6);
+    //gettimeofday(&tv6,&tz6);
 
     // End timing
     gettimeofday(&tv7,&tz7);
 
     // Compute the time difference in micro-seconds
-    float execution1 = ((tv2.tv_sec-tv1.tv_sec)*1000000+(tv2.tv_usec-tv1.tv_usec));
+    /*float execution1 = ((tv2.tv_sec-tv1.tv_sec)*1000000+(tv2.tv_usec-tv1.tv_usec));
     execution1 /= 1000;
     float execution2 = ((tv3.tv_sec-tv2.tv_sec)*1000000+(tv3.tv_usec-tv2.tv_usec));
     execution2 /= 1000;
@@ -265,16 +265,18 @@ float imageCleaner(float *real_image, float *imag_image, int size_x, int size_y)
     float execution4 = ((tv5.tv_sec-tv4.tv_sec)*1000000+(tv5.tv_usec-tv4.tv_usec));
     execution4 /= 1000;
     float execution5 = ((tv6.tv_sec-tv5.tv_sec)*1000000+(tv6.tv_usec-tv5.tv_usec));
-    execution5 /= 1000;
+    execution5 /= 1000;*/
     float execution6 = ((tv7.tv_sec-tv1.tv_sec)*1000000+(tv7.tv_usec-tv1.tv_usec));
     execution6 /= 1000;
     // Print some output
     printf("OPTIMIZED IMPLEMENTATION STATISTICS:\n");
+    /*
     printf("  fftx Execution Time: %f ms\n\n", execution1);
     printf("  ffty Execution Time: %f ms\n\n", execution2);
     printf("  filter Execution Time: %f ms\n\n", execution3);
     printf("  ifftx Execution Time: %f ms\n\n", execution4);
     printf("  iffty Execution Time: %f ms\n\n", execution5);
+    */
     printf("  Optimized Kernel Execution Time: %f ms\n\n", execution6);
     return execution6;
 }
