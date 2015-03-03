@@ -41,17 +41,21 @@ void cpu_fftx(float *real_image, float *imag_image, int size_x, int size_y)
                         // Compute the value for this index
             realOutBuffer[y] = 0.0f;
             imagOutBuffer[y] = 0.0f;
-            for(n = 0; n < size_y; n++)
+            for(n = 0; n < size_y; n+=2)
             {
                 realOutBuffer[y] += (real_image[x*size_y + n] * fft_real[y*size_y + n]) - (imag_image[x*size_y + n] * fft_imag[y*size_y + n]);
                 imagOutBuffer[y] += (imag_image[x*size_y + n] * fft_real[y*size_y + n]) + (real_image[x*size_y + n] * fft_imag[y*size_y + n]);
+                realOutBuffer[y] += (real_image[x*size_y + n+1] * fft_real[y*size_y + n + 1]) - (imag_image[x*size_y + n + 1] * fft_imag[y*size_y + n + 1]);
+                imagOutBuffer[y] += (imag_image[x*size_y + n+1] * fft_real[y*size_y + n + 1]) + (real_image[x*size_y + n + 1] * fft_imag[y*size_y + n + 1]);
             }
         }
         // Write the buffer back to were the original values were
-        for(unsigned int y = 0; y < size_y; y++)
+        for(unsigned int y = 0; y < size_y; y+=2)
         {
             real_image[x*size_y + y] = realOutBuffer[y];
             imag_image[x*size_y + y] = imagOutBuffer[y];
+            real_image[x*size_y + y + 1] = realOutBuffer[y + 1];
+            imag_image[x*size_y + y + 1] = imagOutBuffer[y + 1];
         }
         delete [] realOutBuffer;
         delete [] imagOutBuffer;
@@ -87,8 +91,6 @@ void cpu_ifftx(float *real_image, float *imag_image, int size_x, int size_y)
         }
     }
 
-    //float *realBuffer = new float[size_x * size_x];
-    //float *imagBuffer = new float[size_x * size_x];
     #pragma omp parallel for \
             shared(size_x, size_y, fft_real, fft_imag) \
             private(x, y, n)
@@ -101,10 +103,12 @@ void cpu_ifftx(float *real_image, float *imag_image, int size_x, int size_y)
             // Compute the value for this index
             realOutBuffer[y] = 0.0f;
             imagOutBuffer[y] = 0.0f;
-            for(unsigned int n = 0; n < size_y; n++)
+            for(unsigned int n = 0; n < size_y; n+=2)
             {
                 realOutBuffer[y] += (real_image[x*size_y + n] * fft_real[y*size_y + n]) - (imag_image[x*size_y + n] * fft_imag[y*size_y + n]);
                 imagOutBuffer[y] += (imag_image[x*size_y + n] * fft_real[y*size_y + n]) + (real_image[x*size_y + n] * fft_imag[y*size_y + n]);
+                realOutBuffer[y] += (real_image[x*size_y + n + 1] * fft_real[y*size_y + n + 1]) - (imag_image[x*size_y + n + 1] * fft_imag[y*size_y + n + 1]);
+                imagOutBuffer[y] += (imag_image[x*size_y + n + 1] * fft_real[y*size_y + n + 1]) + (real_image[x*size_y + n + 1] * fft_imag[y*size_y + n + 1]);
             }
 
             // Incoporate the scaling factor here
@@ -112,10 +116,12 @@ void cpu_ifftx(float *real_image, float *imag_image, int size_x, int size_y)
             imagOutBuffer[y] /= size_y;
         }
         // Write the buffer back to were the original values were
-        for(unsigned int y = 0; y < size_y; y++)
+        for(unsigned int y = 0; y < size_y; y+=2)
         {
             real_image[x*size_y + y] = realOutBuffer[y];
             imag_image[x*size_y + y] = imagOutBuffer[y];
+            real_image[x*size_y + y + 1] = realOutBuffer[y + 1];
+            imag_image[x*size_y + y + 1] = imagOutBuffer[y + 1];
         }
         delete [] realOutBuffer;
         delete [] imagOutBuffer;
@@ -200,9 +206,9 @@ void cpu_filter(float *real_image, float *imag_image, int size_x, int size_y)
     #pragma omp parallel for collapse(2) \
             shared(eightX, eight7X, eightY, eight7Y, real_image, imag_image) \
             private(x,y)
-    for(y = 0; y < size_y; y++)
+    for(x = 0; x < size_x; x++)
     {
-        for(x = 0; x < size_x; x++)
+        for(y = 0; y < size_y; y++)
         {
             if(!(x < eightX && y < eightY) &&
                     !(x < eightX && y >= eight7Y) &&
