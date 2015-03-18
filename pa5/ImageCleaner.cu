@@ -15,7 +15,7 @@
 // BEGIN ADD KERNEL DEFINITIONS
 //----------------------------------------------------------------
 
-#define debug 1
+#define debug 0
 #define PI	3.14159256
 #define DIRECTION_X 1
 #define DIRECTION_Y 2
@@ -176,17 +176,18 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
     //
     // Also note that you pass the pointers to the device memory to the kernel call
     if (debug) {
-        CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
-        fftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
-        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
-        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
-        CUDA_ERROR_CHECK(cudaEventElapsedTime(&fftxTime,start,stop));
 
         CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
         fftKernel<<<SIZEY,SIZEX,0,filterStream>>>(device_real, device_imag, DIRECTION_Y);
         CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
         CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
         CUDA_ERROR_CHECK(cudaEventElapsedTime(&fftyTime,start,stop));
+
+        CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
+        fftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
+        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
+        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+        CUDA_ERROR_CHECK(cudaEventElapsedTime(&fftxTime,start,stop));
 
         CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
         filterKernel<<<dim3(SIZEX/FILTER_WIDTH, SIZEY/FILTER_WIDTH),
@@ -199,16 +200,16 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
         CUDA_ERROR_CHECK(cudaEventElapsedTime(&filterTime,start,stop));
 
         CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
-        ifftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
-        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
-        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
-        CUDA_ERROR_CHECK(cudaEventElapsedTime(&ifftxTime,start,stop));
-
-        CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
         ifftKernel<<<SIZEY,SIZEX,0,filterStream>>>(device_real, device_imag, DIRECTION_Y);
         CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
         CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
         CUDA_ERROR_CHECK(cudaEventElapsedTime(&ifftyTime,start,stop));
+
+        CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
+        ifftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
+        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
+        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+        CUDA_ERROR_CHECK(cudaEventElapsedTime(&ifftxTime,start,stop));
     } else {
         fftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
         fftKernel<<<SIZEY,SIZEX,0,filterStream>>>(device_real, device_imag, DIRECTION_Y);
