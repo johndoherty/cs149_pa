@@ -15,14 +15,11 @@
 // BEGIN ADD KERNEL DEFINITIONS
 //----------------------------------------------------------------
 
+#define debug 1
 #define PI	3.14159256
 #define DIRECTION_X 1
-#define DIRECTION_Y 1
-
-__global__ void exampleKernel(float *real_image, float *imag_image, int size_x, int size_y)
-{
-    // Currently does nothing
-}
+#define DIRECTION_Y 2
+#define FILTER_WIDTH 16
 
 
 __global__ void fftKernel(float *real_image, float *imag_image, int direction)
@@ -42,7 +39,7 @@ __global__ void fftKernel(float *real_image, float *imag_image, int direction)
     __shared__ float imag_row[SIZEY];
 
     real_row[row_idx] = real_image[image_index];
-    imag_row[row_idx] = real_image[image_index];
+    imag_row[row_idx] = imag_image[image_index];
 
     __syncthreads();
 
@@ -68,7 +65,7 @@ __global__ void ifftKernel(float *real_image, float *imag_image, int direction)
     // each thread in block is computing a particular y
 
     int row_idx = threadIdx.x;
-    int image_idx;
+    int image_index;
     if (direction == DIRECTION_X) {
         image_index = blockIdx.x*SIZEY + threadIdx.x;
     } else {
@@ -79,7 +76,7 @@ __global__ void ifftKernel(float *real_image, float *imag_image, int direction)
     __shared__ float imag_row[SIZEY];
 
     real_row[row_idx] = real_image[image_index];
-    imag_row[row_idx] = real_image[image_index];
+    imag_row[row_idx] = imag_image[image_index];
 
     __syncthreads();
 
@@ -99,30 +96,24 @@ __global__ void ifftKernel(float *real_image, float *imag_image, int direction)
     imag_image[image_index] = imag_value / SIZEY;
 }
 
-__global__ void cpu_filter(float *real_image, float *imag_image, int size_x, int size_y)
+__global__ void filterKernel(float *real_image, float *imag_image)
 {
-  int eightX = size_x/8;
-  int eight7X = size_x - eightX;
-  int eightY = size_y/8;
-  int eight7Y = size_y - eightY;
-  for(unsigned int x = 0; x < size_x; x++)
-  {
-    for(unsigned int y = 0; y < size_y; y++)
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int eightX = SIZEX/8;
+    int eight7X = SIZEX - eightX;
+    int eightY = SIZEY/8;
+    int eight7Y = SIZEY - eightY;
+    if(!(x < eightX && y < eightY) &&
+       !(x < eightX && y >= eight7Y) &&
+       !(x >= eight7X && y < eightY) &&
+       !(x >= eight7X && y >= eight7Y))
     {
-      if(!(x < eightX && y < eightY) &&
-	 !(x < eightX && y >= eight7Y) &&
-	 !(x >= eight7Y && y < eightY) &&
-	 !(x >= eight7Y && y >= eight7Y))
-      {
-	// Zero out these values
-	real_image[y*size_x + x] = 0;
-	imag_image[y*size_x + x] = 0;
-      }
+        // Zero out these values
+        real_image[y*SIZEX + x] = 0;
+        imag_image[y*SIZEX + x] = 0;
     }
-  }
 }
-
-
 
 //----------------------------------------------------------------
 // END ADD KERNEL DEFINTIONS
@@ -138,6 +129,7 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
 
     // These variables are for timing purposes
     float transferDown = 0, transferUp = 0, execution = 0;
+    float fftxTime = 0, fftyTime = 0, filterTime = 0, ifftxTime = 0, ifftyTime = 0;
     cudaEvent_t start,stop;
 
     CUDA_ERROR_CHECK(cudaEventCreate(&start));
@@ -165,7 +157,7 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
     CUDA_ERROR_CHECK(cudaEventElapsedTime(&transferDown,start,stop));
 
     // Start timing for the execution
-    CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
+    if (!debug) CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
 
     //----------------------------------------------------------------
     // TODO: YOU SHOULD PLACE ALL YOUR KERNEL EXECUTIONS
@@ -183,19 +175,65 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
     //    4. Stream to execute kernel on, should always be 'filterStream'
     //
     // Also note that you pass the pointers to the device memory to the kernel call
-    fftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
-    fftKernel<<<SIZEY,SIZEX,0,filterStream>>>(device_real, device_imag, DIRECTION_Y);
+    if (debug) {
+        CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
+        fftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
+        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
+        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+        CUDA_ERROR_CHECK(cudaEventElapsedTime(&fftxTime,start,stop));
 
-    ifftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
-    ifftKernel<<<SIZEY,SIZEX,0,filterStream>>>(device_real, device_imag, DIRECTION_Y);
+        CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
+        fftKernel<<<SIZEY,SIZEX,0,filterStream>>>(device_real, device_imag, DIRECTION_Y);
+        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
+        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+        CUDA_ERROR_CHECK(cudaEventElapsedTime(&fftyTime,start,stop));
+
+        CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
+        filterKernel<<<dim3(SIZEX/FILTER_WIDTH, SIZEY/FILTER_WIDTH),
+            dim3(FILTER_WIDTH, FILTER_WIDTH),
+            0,
+            filterStream>>>
+                (device_real, device_imag);
+        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
+        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+        CUDA_ERROR_CHECK(cudaEventElapsedTime(&filterTime,start,stop));
+
+        CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
+        ifftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
+        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
+        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+        CUDA_ERROR_CHECK(cudaEventElapsedTime(&ifftxTime,start,stop));
+
+        CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
+        ifftKernel<<<SIZEY,SIZEX,0,filterStream>>>(device_real, device_imag, DIRECTION_Y);
+        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
+        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+        CUDA_ERROR_CHECK(cudaEventElapsedTime(&ifftyTime,start,stop));
+    } else {
+        fftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
+        fftKernel<<<SIZEY,SIZEX,0,filterStream>>>(device_real, device_imag, DIRECTION_Y);
+
+        filterKernel<<<dim3(SIZEX/FILTER_WIDTH, SIZEY/FILTER_WIDTH),
+            dim3(FILTER_WIDTH, FILTER_WIDTH),
+            0,
+            filterStream>>>
+                (device_real, device_imag);
+
+        ifftKernel<<<SIZEX,SIZEY,0,filterStream>>>(device_real, device_imag, DIRECTION_X);
+        ifftKernel<<<SIZEY,SIZEX,0,filterStream>>>(device_real, device_imag, DIRECTION_Y);
+    }
     //---------------------------------------------------------------- 
     // END ADD KERNEL CALLS
     //----------------------------------------------------------------
 
     // Finish timimg for the execution 
-    CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
-    CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
-    CUDA_ERROR_CHECK(cudaEventElapsedTime(&execution,start,stop));
+    if (debug) {
+        execution = fftxTime + fftyTime + filterTime + ifftxTime + ifftyTime;
+    } else {
+        CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
+        CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
+        CUDA_ERROR_CHECK(cudaEventElapsedTime(&execution,start,stop));
+    }
 
     // Start timing for the transfer up
     CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
@@ -225,6 +263,13 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
     printf("CUDA IMPLEMENTATION STATISTICS:\n");
     printf("  Host to Device Transfer Time: %f ms\n", transferDown);
     printf("  Kernel(s) Execution Time: %f ms\n", execution);
+    if (debug) {
+        printf("    fftx   Execution Time: %f ms\n", fftxTime);
+        printf("    ffty   Execution Time: %f ms\n", fftyTime);
+        printf("    filter Execution Time: %f ms\n", filterTime);
+        printf("    ifftx  Execution Time: %f ms\n", ifftxTime);
+        printf("    iffty  Execution Time: %f ms\n", ifftyTime);
+    }
     printf("  Device to Host Transfer Time: %f ms\n", transferUp);
     float totalTime = transferDown + execution + transferUp;
     printf("  Total CUDA Execution Time: %f ms\n\n", totalTime);
